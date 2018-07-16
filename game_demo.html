@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>按键盘的上下左右躲开这些黑色障碍物</title>
+</head>
+<style>
+    #canvas_dom{border: 1px solid #000;margin: 0 auto;display: block;background: #fff;}
+    .title{text-align: center;}
+    #game_time{text-align: center;}
+</style>
+<body>
+	<h1 class="title">按键盘的上下左右躲开这些黑色障碍物</h1>
+	<h2 id="game_time">你坚持的时间：<span>0</span>S</h2>
+	<canvas id="canvas_dom"></canvas>
+    <script>
+    	/*
+    		ddmm
+    		2018/07/13
+
+    		1.头像移动
+    		设置两个按键监听事件(keydown - 按下，keyup - 松开)，每当按下时就将按下的键的state改为true，松开则相反，
+    		然后，设置了一个定时器，每一定时间会读取这些按键state，根据state和速度进行头像位置坐标的调整，并且擦除头像，重新画上
+
+			2.矩形下落
+			与头像移动类似，只是擦除和绘制有多个(本代码中用设置多个定时器来维护这些矩形的绘制)，并且横坐标和下落速度在一定范围内随机
+
+			3.碰撞检测
+			这个直接看代码，本代码写的有点啰嗦
+    	 */
+    	//全局变量
+        var g = {
+
+        	ctx: null,//画布会话上下文
+           	itv_ids: [],//用于记录定时器id，便于一起clear掉，减少内存消耗
+           	game_over: false,//游戏是否结束
+           	refreshNumForSec: 60,//每秒画面刷新次数
+           	game_time: 0, //游戏坚持的时间
+        	canvasWidth: 1000,//画布宽度
+            canvasHeight: 700,//画布高度
+            faceDataUrl: 'http://www.200ok.fun:3100/images/wudier.png',//头像地址
+        	img: null,//头像图片引用
+        	faceWidth: 80,
+        	faceHeight: 82.5,
+            faceX: 0,//头像位置x坐标(其初始值会在首次加载被initFacePos方法计算得出，故设置是无效的)
+            faceY: 0,//头像位置y坐标(其初始值会在首次加载被initFacePos方法计算得出，故设置是无效的)
+            faceLastX: 0,//头像上一次位置x坐标，用于擦除(其初始值会在首次加载被initFacePos方法计算得出，故设置是无效的)
+            faceLastY: 0,//头像上一次位置y坐标，用于擦除(其初始值会在首次加载被initFacePos方法计算得出，故设置是无效的)
+            keyRight: false,//是否按了→
+            keyLeft: false,//是否按了←
+            keyUp: false,//是否按了↑
+            keyDown: false,//是否按了↓
+            faceSpeed: 15,//头像每次刷新画布移动的像素
+           	rectW: 200,//矩形的宽度
+            rectH: 20,//矩形的高度
+           	rectSpeedMin: 3,//方块速度最小值
+           	rectSpeedMax: 15,//方块速度最大值
+           	rectFlowNumForSec: 1,//每秒生成矩形个数
+        };
+ 
+        _main();//主函数
+ 
+        //获取画布上下文
+        function getCtx(){
+        	if(!g.ctx){
+        		//获取dom
+        		var canvas = document.querySelector('#canvas_dom');
+        		
+        		//设置宽高
+        		canvas.width = g.canvasWidth;
+        		canvas.height = g.canvasHeight;
+        		
+        		//获取会话上下文
+        		g.ctx = canvas.getContext('2d');
+        	}
+            
+            return g.ctx;
+        }
+ 
+        function _main(){
+            getCtx();//获取画布上下文
+
+            //获取头像图片
+            g.img = new Image();
+            g.img.src = g.faceDataUrl;
+            g.img.width = g.faceWidth;
+            g.img.height = g.faceHeight;
+            g.img.onload = function(){//图片加载完成
+            	g.img.style.border = "1px solid #000";
+            	initFacePos();
+            }
+ 			
+ 			//监听keydown事件
+            window.addEventListener('keydown',function(e){
+                var k = e.key;
+                stateJudge(k,true);//修改按键state
+            });
+ 		
+ 			//监听keyup事件
+            window.addEventListener('keyup',function(e){
+                var k = e.key;
+                stateJudge(k,false);//修改按键state
+            });
+ 			
+ 			//设置定时器，1秒重绘 g.refreshNumForSec 次头像
+            g.itv_ids.push(
+            	setInterval(function(){
+	        		if(!g.game_over){
+		                moveJudge();
+		                //擦除上一次画的
+		                g.ctx.clearRect(g.faceLastX,g.faceLastY,g.img.width,g.img.height);
+		                //绘制之前保存一下位置，用于下次擦除
+		                g.faceLastX = g.faceX;
+		                g.faceLastY = g.faceY;
+		                //绘制头像
+		                g.ctx.drawImage(g.img,g.faceX,g.faceY,g.img.width,g.img.height);
+		            }
+            	},1000/g.refreshNumForSec)
+            );
+
+            //每1秒生成一个随机位置，随机速度的矩形往下掉
+            g.itv_ids.push(
+	            setInterval(function(){
+	            	var max = g.canvasWidth - g.rectW;//画布宽度 - 矩形宽度
+	            	var x = get_random_num(0,max);//获取x坐标随机值
+	            	var speed = get_random_num(g.rectSpeedMin,g.rectSpeedMax);//获取速度随机值
+	           		drawTheRect(x,0,g.rectW,g.rectH,speed);
+	            },1000/g.rectFlowNumForSec)
+            );
+
+            //数秒，改dom
+            g.itv_ids.push(
+	            setInterval(function(){
+	            	g.game_time++;
+	            	document.querySelector('#game_time span').innerText = g.game_time;
+	            },1000)
+            );
+        }
+
+    	//根据画布和头像宽高，初始化头像位置，将其画于底部中间位置
+        function initFacePos(){
+        	g.faceX = g.canvasWidth/2 - g.img.width/2;
+        	g.faceY = g.canvasHeight - g.img.height;
+        	g.faceLastX = g.faceX;
+        	g.faceLastY = g.faceY;
+        	g.ctx.drawImage(g.img,g.faceX,g.faceY,g.img.width,g.img.height);//绘制头像
+        }
+
+		/**
+		* [checkRectImpact 碰撞检测，如果所提供的坐标点碰撞则返回true，否则返回false]
+		* - - 没看过别人怎么写的，写的有点啰嗦
+		* x1 x2 y1 y2 分别为第一个矩形(下称矩形A)的左边横坐标，右边横坐标，上边纵坐标，下边纵坐标
+		* a1 a2 b1 b2 分别为第二个矩形(下称矩形B)的左边横坐标，右边横坐标，上边纵坐标，下边纵坐标
+		* 坐标点如下图所示
+		  x1      x2 
+			————————   y1
+			|       |
+			|       |
+			|		|
+			————————   y2
+
+			a1      a2 
+			————————   b1
+			|       |
+			|       |
+			|		|
+			————————   b2
+		*/
+        function checkRectImpact(x1,x2,y1,y2,a1,a2,b1,b2){
+        	//分别为 左上角碰到 || 右上角碰到 || 右下角碰到 || 左下角碰到 || 矩形B大于矩形A且矩形B从下至上包含矩形A穿过 || 矩形B大于矩形A且矩形B从上至下包含矩形A穿过 || 矩形A大于矩形B且矩形A从下至上包含矩形B穿过 || 矩形A大于矩形B且矩形A从上至下包含矩形B穿过
+        	return (x1 <= a1 && x2 >= a1 && y1 <= b1 && y2 >= b1) || (x1 <= a2 && x2 >= a2 && y1 <= b1 && y2 >= b1) || (x1 <= a2 && x2 >= a2 && y1 <= b2 && y2 >= b2) || (x1 <= a1 && x2 >= a1 && y1 <= b2 && y2 >= b2) || (x1 >= a1 && x2 <= a2 && y2 >= b1 && y1 <= b1) || (x1 >= a1 && x2 <= a2 && y2 >= b2 && y1 <= b2) || (a1 >= x1 && a2 <= x2 && b2 >= y1 && b1 <= y1) || (a1 >= x1 && a2 <= x2 && b2 >= y2 && b1 <= y2);
+        }
+
+        //获取某个某个区间内的随机整数 ，获取到的值域为[min,max)
+        function get_random_num(min,max){
+            if(/^-?\d+$/.test(min) && /^-?\d+$/.test(max) && max>min){
+                return parseInt(Math.random()*(max - min) + min);
+            }else{
+                return false;
+            }
+        }
+
+        /**
+         * [drawTheRect 画矩形]
+         * @param  {[type]} x     [矩形距离左边框的距离]
+         * @param  {[type]} y     [矩形距离上边框的距离]
+         * @param  {[type]} w     [矩形的宽度]
+         * @param  {[type]} h     [矩形的高度]
+         * @param  {[type]} speed [每一次重绘画面，矩形下坠的距离，即下坠速度]
+         * @return {[type]}       [description]
+         */
+        function drawTheRect(x,y,w,h,speed){
+        	var itv_id = setInterval(function(){
+        		if(!g.game_over){
+	        		//绘制之前保存一下位置，用于下次擦除
+		        	var lastX = x;
+		        	var lastY = y;
+		        	// var speed = get_random_num(3,120); //经G民同学提示，可以考虑每次重绘方块时给其变速
+		        	y += speed;
+		            g.ctx.clearRect(lastX,lastY,w,h); //擦除
+					g.ctx.fillRect(x,y,w,h); //画
+					if(checkRectImpact(g.faceX,g.faceX + g.img.width,g.faceY,g.faceY + g.img.height,x,x+w,y,y+h)){//碰撞检测
+						game_over();
+						return;
+					}
+					if(y > g.canvasHeight){//如果已经超过了画布的高度那么移除这个定时器，减少内存消耗
+						clearInterval(itv_id);
+					}
+        		}
+        	},1000/g.refreshNumForSec);
+        	g.itv_ids.push(itv_id);//存到全局变量
+        }
+
+        //游戏结束
+        function game_over(){
+        	clearAllInterval();
+        	g.game_over = true;
+        	setTimeout(function(){//如果不延迟可能会导致上一次绘画未完成就被阻塞了
+        		if(confirm("游戏结束，你坚持了" + g.game_time + "S" + "，继续努力!\n重新开始游戏请点'是'")){
+        			window.location.reload();
+        		}
+        	},50);
+        }
+
+        //clear所有定时器
+        function clearAllInterval(){
+        	for(var i in g.itv_ids){
+        		r = g.itv_ids[i];
+        		clearInterval(r);
+        	}
+        }
+ 		
+ 		//根据按键状态修改头像的坐标
+        function moveJudge(){
+            if(g.keyRight === true){
+            	g.faceX += g.faceSpeed;
+            }else if(g.keyLeft === true){
+            	g.faceX -= g.faceSpeed;
+            }else if(g.keyUp === true){
+                g.faceY -= g.faceSpeed;
+            }else if(g.keyDown === true){
+                g.faceY += g.faceSpeed;
+            }
+
+            //边界情况处理,不要让头像超出边界
+            if(g.faceX > g.canvasWidth - g.img.width){
+            	g.faceX = g.canvasWidth - g.img.width;
+            }else if(g.faceX < 0){
+            	g.faceX = 0;
+            }
+            if(g.faceY > g.canvasHeight - g.img.height){
+            	g.faceY = g.canvasHeight - g.img.height;
+            }else if(g.faceY < 0){
+            	g.faceY = 0;
+            }
+        }
+ 
+        //根据按键修改状态
+        function stateJudge(k,v){
+            if(k == 'ArrowRight'){
+                g.keyRight = v;
+            }else if(k == 'ArrowLeft'){
+                g.keyLeft = v;
+            }else if(k == "ArrowUp"){
+                g.keyUp = v;
+            }else if(k == "ArrowDown"){
+                g.keyDown = v;
+            }
+        }
+    </script>
+</body>
+</html>
