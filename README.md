@@ -1,5 +1,5 @@
 # my_game
-canvas小游戏demo(躲避障碍1).
+canvas小游戏demo(躲避障碍1)..
 
 
 #在线演示地址
